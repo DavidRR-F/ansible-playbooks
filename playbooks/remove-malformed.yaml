@@ -1,0 +1,13 @@
+- name: Fix malformed entries in APT sources list
+  hosts: all
+  become: yes
+  tasks:
+    - name: Remove the malformed Docker APT source list file
+      ansible.builtin.file:
+        path: /etc/apt/sources.list.d/download_docker_com_linux_ubuntu.list
+        state: absent
+    - name: Remove malformed entries
+      ansible.builtin.lineinfile:
+        path: /etc/apt/sources.list
+        state: absent
+        regexp: '^(?!deb|deb-src)'
