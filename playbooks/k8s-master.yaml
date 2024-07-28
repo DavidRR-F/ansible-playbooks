@@ -1,21 +1,47 @@
 
 - name: Configuration of master node
   hosts: masters
+  become: true
+  vars_files:
+    - ../kubernetes-secrets.yaml
   tasks:
-    - name: initialize K8S cluster
-      shell: kubeadm init --pod-network-cidr=172.16.0.0/16 --apiserver-advertise-address=192.168.100.5 --ignore-preflight-errors=all
+    - name: Initialize K8S Cluster
+      ansible.builtin.shell: | 
+        kubeadm init \
+          --pod-network-cidr={{ pod_network_cidr }} \
+          --token={{ kubernetes_token }} \
+          --cri-socket unix:///run/containerd/containerd.sock
+      register: kubeadm_init
 
-    - name: create .kube directoryi and copy kube config file
-      shell: "{{ item }}"
-      loop:
-        -  mkdir -p $HOME/.kube
-        -  cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-        - chown $(id -u):$(id -g) $HOME/.kube/config
+    - name: Create Kube Config
+      ansible.builtin.shell: |
+        mkdir -p $HOME/.kube && \
+        cp -i /etc/kubernetes/admin.conf $HOME/.kube/config && \
+        chown $(id -u):$(id -g) $HOME/.kube/config
 
-    - name: install Pod network
-      become: yes
-      shell: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/calico.yaml >> pod_network_setup.txt
-      args:
-        chdir: $HOME
-        creates: pod_network_setup.txt
+    - name: Get Calico manifest
+      ansible.builtin.get_url:
+        url: https://docs.projectcalico.org/manifests/calico.yaml
+        dest: /tmp/calico.yaml
 
+    - name: Update CALICP_IPV4POOL_CIDR
+      ansible.builtin.lineinfile:
+        path: /tmp/calico.yaml
+        regexp: 'value: "192.168.0.0/16"'
+        line: 'value: {{ pod_network_cidr }}'
+    
+    - name: Apply Pod Network
+      ansible.builtin.shell: |
+        kubectl apply -f /tmp/calico.yaml
+
+    - name: Retrieve CA certificate hash
+      ansible.builtin.command: |
+        openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | \
+        openssl rsa -pubin -outform der 2>/dev/null | \
+        openssl dgst -sha256 -hex | \
+        sed 's/^.* //'
+      register: ca_cert_hash
+
+    - name: Set CA certificate hash fact
+      ansible.builtin.set_fact:
+        ca_cert_hash: "{{ ca_cert_hash.stdout }}"
