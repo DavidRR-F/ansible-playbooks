@@ -1,4 +1,5 @@
 hosts.ini
 ansible.cfg
+secrets.yaml
 *secrets.yaml
 .python-version

@@ -1,0 +1,16 @@
+- name: Create K8s Cluster
+  hosts: k8s 
+  become: yes
+  vars_files:
+    - k8s/kubernetes-secrets.yaml
+
+  tasks:
+    - name: Init Deps
+      imporrt_playbook: k8s/init.yaml
+
+    - name: Init Master
+      imporrt_playbook: k8s/master.yaml
+
+    - name: Init Worker
+      imporrt_playbook: k8s/worker.yaml
+      

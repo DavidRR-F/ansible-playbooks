@@ -3,14 +3,16 @@
   hosts: masters
   become: true
   vars_files:
-    - ../kubernetes-secrets.yaml
+    - secrets.yaml
   tasks:
+    - name: Create kubeadm configuration file
+      ansible.builtin.template:
+        src: kubeadm-config.yaml.j2
+        dest: /tmp/kubeadm-config.yaml
+
     - name: Initialize K8S Cluster
       ansible.builtin.shell: | 
-        kubeadm init \
-          --pod-network-cidr={{ pod_network_cidr }} \
-          --token={{ kubernetes_token }} \
-          --cri-socket unix:///run/containerd/containerd.sock
+        kubeadm init --config /tmp/kubeadm-config.yaml 
       register: kubeadm_init
 
     - name: Create Kube Config
@@ -24,11 +26,17 @@
         url: https://docs.projectcalico.org/manifests/calico.yaml
         dest: /tmp/calico.yaml
 
+    - name: Uncomment CALICO_IPV4POOL_CIDR line
+      ansible.builtin.lineinfile:
+        path: /tmp/calico.yaml
+        regexp: '^# - name: CALICO_IPV4POOL_CIDR'
+        line: '- name: CALICO_IPV4POOL_CIDR'
+
     - name: Update CALICP_IPV4POOL_CIDR
       ansible.builtin.lineinfile:
         path: /tmp/calico.yaml
-        regexp: 'value: "192.168.0.0/16"'
-        line: 'value: {{ pod_network_cidr }}'
+        regexp: '"192.168.0.0/16"'
+        line: '{{ pod_network_cidr }}'
     
     - name: Apply Pod Network
       ansible.builtin.shell: |
