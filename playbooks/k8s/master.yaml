@@ -4,6 +4,8 @@
   become: true
   vars_files:
     - secrets.yaml
+  vars:
+    k8s_group: k8sadmins
   tasks:
     - name: Create kubeadm configuration file
       ansible.builtin.template:
@@ -41,6 +43,30 @@
     - name: Apply Pod Network
       ansible.builtin.shell: |
         kubectl apply -f /tmp/calico.yaml
+
+    - name: Create Shared Kube Config Directory
+      ansible.builtin.file:
+        path: /etc/kubernetes/shared
+        state: directory
+        owner: root
+        group: "{{ k8s_group }}"
+        mode: '0770'
+
+    - name: Copy Kube Config to Shared Directory
+      ansible.builtin.copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /etc/kubernetes/shared/admin.conf
+        owner: root
+        group: "{{ k8s_group }}"
+        mode: '0660'
+
+    - name: Ensure the group ownership of the kubeconfig is correct
+      ansible.builtin.file:
+        path: /etc/kubernetes/shared/admin.conf
+        owner: root
+        group: "{{ k8s_group }}"
+        mode: '0660'
+
 
     - name: Retrieve CA certificate hash
       ansible.builtin.command: |
