@@ -67,6 +67,25 @@
         group: "{{ k8s_group }}"
         mode: '0660'
 
+    - name: Set ownership and permissions for kubectl
+      ansible.builtin.file:
+        path: /usr/bin/kubectl
+        owner: root
+        group: "{{ k8s_group }}"
+        mode: '0750'
+
+    - name: Set ownership and permissions for kubeadm
+      ansible.builtin.file:
+        path: /usr/bin/kubeadm
+        owner: root
+        group: "{{ k8s_group }}"
+        mode: '0750'
+
+    - name: Create ClusterRoleBinding for Kubernetes Group
+      ansible.builtin.command:
+        cmd: kubectl create clusterrolebinding k8s-group-binding --clusterrole=cluster-admin --group={{ k8s_group }}
+      args:
+        creates: /etc/kubernetes/shared/admin.conf
 
     - name: Retrieve CA certificate hash
       ansible.builtin.command: |
