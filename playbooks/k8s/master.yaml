@@ -4,97 +4,58 @@
   become: true
   vars_files:
     - secrets.yaml
-  vars:
-    k8s_group: k8sadmins
   tasks:
-    - name: Create kubeadm configuration file
-      ansible.builtin.template:
-        src: kubeadm-config.yaml.j2
-        dest: /tmp/kubeadm-config.yaml
+    - name: Gather facts
+      ansible.builtin.setup:
+      become: no
 
-    - name: Initialize K8S Cluster
-      ansible.builtin.shell: | 
-        kubeadm init --config /tmp/kubeadm-config.yaml 
-      register: kubeadm_init
+    - name: Check if Kubernetes has already been initialized
+      ansible.builtin.stat:
+        path: /etc/kubernetes/admin.conf
+      register: kubeadm_init_status
 
-    - name: Create Kube Config
-      ansible.builtin.shell: |
-        mkdir -p $HOME/.kube && \
-        cp -i /etc/kubernetes/admin.conf $HOME/.kube/config && \
-        chown $(id -u):$(id -g) $HOME/.kube/config
+    - name: Initialize Kubernetes
+      ansible.builtin.command:
+        cmd: |
+          kubeadm init \
+          --control-plane-endpoint={{ ansible_default_ipv4.address }}\
+          --node-name={{ ansible_hostname }} \
+          --pod-network-cidr=10.244.0.0/16
+      when: not kubeadm_init_status.stat.exists
 
-    - name: Get Calico manifest
-      ansible.builtin.get_url:
-        url: https://docs.projectcalico.org/manifests/calico.yaml
-        dest: /tmp/calico.yaml
+    - name: Extract join command
+      shell: |
+        grep -A 1 "kubeadm join" /tmp/kubeadm_init_output.txt | tail -n 2 > /tmp/kubeadm_join_command.sh
+      when: not kubeadm_init_status.stat.exists
+      register: join_command
 
-    - name: Uncomment CALICO_IPV4POOL_CIDR line
-      ansible.builtin.lineinfile:
-        path: /tmp/calico.yaml
-        regexp: '^# - name: CALICO_IPV4POOL_CIDR'
-        line: '- name: CALICO_IPV4POOL_CIDR'
-
-    - name: Update CALICP_IPV4POOL_CIDR
-      ansible.builtin.lineinfile:
-        path: /tmp/calico.yaml
-        regexp: '"192.168.0.0/16"'
-        line: '{{ pod_network_cidr }}'
-    
-    - name: Apply Pod Network
-      ansible.builtin.shell: |
-        kubectl apply -f /tmp/calico.yaml
-
-    - name: Create Shared Kube Config Directory
+    - name: Ensure kube config directory exists
       ansible.builtin.file:
-        path: /etc/kubernetes/shared
+        path: "{{ lookup('env', 'HOME') }}/.kube"
         state: directory
-        owner: root
-        group: "{{ k8s_group }}"
-        mode: '0770'
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_gid }}"
+        mode: '0755'
+      when: kubeadm_init_status.stat.exists
+      become: no
 
-    - name: Copy Kube Config to Shared Directory
+    - name: Check if kube config already exists
+      ansible.builtin.stat:
+        path: "{{ lookup('env', 'HOME') }}/.kube/config"
+      register: kube_config_status
+      become: no
+
+    - name: Copy kube config to user home
       ansible.builtin.copy:
         src: /etc/kubernetes/admin.conf
-        dest: /etc/kubernetes/shared/admin.conf
-        owner: root
-        group: "{{ k8s_group }}"
-        mode: '0660'
+        dest: "{{ lookup('env', 'HOME') }}/.kube/config"
+        remote_src: yes
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_gid }}"
+        mode: '0644'
+      when: 
+        - kubeadm_init_status.stat.exists
+        - not kube_config_status.stat.exists
+      become: no
 
-    - name: Ensure the group ownership of the kubeconfig is correct
-      ansible.builtin.file:
-        path: /etc/kubernetes/shared/admin.conf
-        owner: root
-        group: "{{ k8s_group }}"
-        mode: '0660'
 
-    - name: Set ownership and permissions for kubectl
-      ansible.builtin.file:
-        path: /usr/bin/kubectl
-        owner: root
-        group: "{{ k8s_group }}"
-        mode: '0750'
-
-    - name: Set ownership and permissions for kubeadm
-      ansible.builtin.file:
-        path: /usr/bin/kubeadm
-        owner: root
-        group: "{{ k8s_group }}"
-        mode: '0750'
-
-    - name: Create ClusterRoleBinding for Kubernetes Group
-      ansible.builtin.command:
-        cmd: kubectl create clusterrolebinding k8s-group-binding --clusterrole=cluster-admin --group={{ k8s_group }}
-      args:
-        creates: /etc/kubernetes/shared/admin.conf
-
-    - name: Retrieve CA certificate hash
-      ansible.builtin.command: |
-        openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | \
-        openssl rsa -pubin -outform der 2>/dev/null | \
-        openssl dgst -sha256 -hex | \
-        sed 's/^.* //'
-      register: ca_cert_hash
-
-    - name: Set CA certificate hash fact
-      ansible.builtin.set_fact:
-        ca_cert_hash: "{{ ca_cert_hash.stdout }}"

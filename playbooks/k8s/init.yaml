@@ -20,40 +20,90 @@
         line: '#\0'
         backrefs: true
 
+    - name: Enable IPv4 Forwarding in sysctl
+      ansible.builtin.lineinfile:
+        path: /etc/sysctl.conf
+        regexp: ^.*net.ipv4.ip_forwarding.*$
+        line: 'net.ipv4.ip_forwarding = 1'
+
     - name: Install Apt Dependencies
       ansible.builtin.apt:
         name:
           - apt-transport-https
           - ca-certificates
+          - containerd
           - curl
           - gnupg
         state: present
         update_cache: yes
+
+    - name: Create Containerd Configuration Directory
+      ansible.builtin.file:
+        path: /etc/containerd
+        mode: '0755'
+        state: directory
+
+    - name: Check if Containerd configuration file exists
+      ansible.builtin.stat:
+        path: /etc/containerd/config.toml
+      register: containerd_config
+
+    - name: Initialize Containerd Configuration
+      ansible.builtin.shell: |
+        containerd config default > /etc/containerd/config.toml
+      register: containerd_config_created
+      when: not containerd_config.stat.exists
+
+    - name: Edit Containerd Configuration
+      ansible.builtin.lineinfile:
+        path: /etc/containerd/config.toml
+        regexp: ^.*SystemdCgroup.*$
+        line: '            SystemdCgroup = true'
+
+    - name: Restart Containerd
+      ansible.builtin.systemd:
+        name: containerd
+        state: restarted
+      when: containerd_config_created.stat.exists
+
+    - name: Add Netfilter Kernel Module
+      ansible.builtin.lineinfile:
+        path: /etc/modules-load.d/k8s.conf
+        line: br_netfilter
+        create: yes
+
+    - name: Load Netfilter Kernel Module
+      community.general.modprobe:
+        name: br_netfilter
+        state: present
+        persistent: present
+
+    - name: Ensure net.bridge.bridge-nf-call-iptables is set
+      ansible.builtin.lineinfile:
+        path: /etc/sysctl.d/k8s.conf
+        line: 'net.bridge.bridge-nf-call-iptables = 1'
+        create: yes
+
+    - name: Ensure net.ipv4.ip_forward is set
+      ansible.builtin.lineinfile:
+        path: /etc/sysctl.d/k8s.conf
+        line: 'net.ipv4.ip_forward = 1'
+        create: yes
+
+    - name: Ensure net.bridge.bridge-nf-call-ip6tables is set
+      ansible.builtin.lineinfile:
+        path: /etc/sysctl.d/k8s.conf
+        line: 'net.bridge.bridge-nf-call-ip6tables = 1'
+        create: yes
+
+    - name: Apply sysctl parameters
+      ansible.builtin.shell: sysctl --system
 
     - name: Create Keyring Directory
       ansible.builtin.file:
         path: /etc/apt/keyrings
         mode: '0755'
         state: directory
-
-    - name: Check if Docker GPG keyring exists
-      ansible.builtin.stat:
-        path: /etc/apt/keyrings/docker.asc
-      register: docker_keyring_stat
-
-    - name: Add Docker GPG Key
-      ansible.builtin.shell: |
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
-        gpg --dearmor -o /etc/apt/keyrings/docker.asc
-      when: not docker_keyring_stat.stat.exists
-
-    - name: Add Docker Repository
-      ansible.builtin.shell: |
-        echo \
-          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-          $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-          tee /etc/apt/sources.list.d/docker.list > /dev/null
-      when: not docker_keyring_stat.stat.exists
 
     - name: Check if Kubernetes GPG keyring exists
       ansible.builtin.stat:
@@ -75,54 +125,11 @@
     - name: Install Packages
       ansible.builtin.apt:
         name:
-          - containerd.io
           - kubeadm
           - kubelet
           - kubectl
         state: present
         update_cache: yes
-
-    - name: Ensure cri plugin is enabled in containerd configuration
-      ansible.builtin.lineinfile:
-        path: /etc/containerd/config.toml
-        regexp: '^disabled_plugins.*cri'
-        state: absent
-
-    - name: Configure containerd to use systemd cgroups
-      ansible.builtin.blockinfile:
-        path: /etc/containerd/config.toml
-        block: |
-          [plugins."io.containerd.grpc.v1.cri"]
-            [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
-              SystemdCgroup = true
-
-    - name: Restart Containerd
-      ansible.builtin.service:
-        name: containerd
-        enabled: true
-        state: restarted
-
-    - name: Load necessary kernel modules
-      ansible.builtin.copy:
-        dest: /etc/modules-load.d/k8s.conf
-        content: |
-          br_netfilter
-
-    - name: Load kernel modules
-      ansible.builtin.shell: |
-        modprobe br_netfilter
-
-    - name: Set kernel parameters
-      ansible.builtin.copy:
-      dest: /etc/sysctl.d/k8s.conf
-      content: |
-        net.bridge.bridge-nf-call-iptables = 1
-        net.ipv4.ip_forward = 1
-        net.bridge.bridge-nf-call-ip6tables = 1
-
-    - name: Apply sysctl parameters
-      ansible.builtin.shell: |
-        sysctl --system
 
     - name: Start kubelet
       ansible.builtin.service:
