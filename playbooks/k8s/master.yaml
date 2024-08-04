@@ -2,8 +2,6 @@
 - name: Configuration of master node
   hosts: masters
   become: true
-  vars_files:
-    - secrets.yaml
   tasks:
     - name: Gather facts
       ansible.builtin.setup:
@@ -15,19 +13,12 @@
       register: kubeadm_init_status
 
     - name: Initialize Kubernetes
-      ansible.builtin.command:
-        cmd: |
+      ansible.builtin.shell: |
           kubeadm init \
-          --control-plane-endpoint={{ ansible_default_ipv4.address }}\
+          --control-plane-endpoint={{ ansible_default_ipv4.address }} \
           --node-name={{ ansible_hostname }} \
           --pod-network-cidr=10.244.0.0/16
       when: not kubeadm_init_status.stat.exists
-
-    - name: Extract join command
-      shell: |
-        grep -A 1 "kubeadm join" /tmp/kubeadm_init_output.txt | tail -n 2 > /tmp/kubeadm_join_command.sh
-      when: not kubeadm_init_status.stat.exists
-      register: join_command
 
     - name: Ensure kube config directory exists
       ansible.builtin.file:
@@ -36,7 +27,7 @@
         owner: "{{ ansible_user_id }}"
         group: "{{ ansible_user_gid }}"
         mode: '0755'
-      when: kubeadm_init_status.stat.exists
+      when: not kubeadm_init_status.stat.exists
       become: no
 
     - name: Check if kube config already exists
@@ -54,8 +45,12 @@
         group: "{{ ansible_user_gid }}"
         mode: '0644'
       when: 
-        - kubeadm_init_status.stat.exists
+        - not kubeadm_init_status.stat.exists
         - not kube_config_status.stat.exists
       become: no
 
-
+    - name: Add Overlay Network
+      community.kubernetes.k8s:
+        state: present
+        definition: "{{ lookup('url', 'https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml') }}"
+      become: no
