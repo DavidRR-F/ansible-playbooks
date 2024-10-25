@@ -1,0 +1,32 @@
+- name: Configure DNS with systemd-resolved
+  hosts: all
+  become: yes
+  vars:
+    primary_dns: "{{ lookup('vars', 'primary_dns', fail_on_undefined=True) }}"
+    fallback_dns: "{{ lookup('vars', 'fallback_dns', fail_on_undefined=True) }}"
+
+  tasks:
+    - name: Update systemd-resolved DNS configuration with provided primary DNS
+      ansible.builtin.lineinfile:
+        path: /etc/systemd/resolved.conf
+        regexp: '^DNS='
+        line: "DNS={{ primary_dns }}"
+        create: yes
+
+    - name: Set Fallback DNS with provided fallback DNS
+      ansible.builtin.lineinfile:
+        path: /etc/systemd/resolved.conf
+        regexp: '^FallbackDNS='
+        line: "FallbackDNS={{ fallback_dns }}"
+        create: yes
+
+    - name: Restart systemd-resolved to apply DNS changes
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+
+    - name: Ensure /etc/resolv.conf is linked to systemd-resolved
+      ansible.builtin.file:
+        src: /run/systemd/resolve/resolv.conf
+        dest: /etc/resolv.conf
+        state: link

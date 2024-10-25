@@ -1,0 +1,26 @@
+- name: Deploy Hashicorp Vault Agent
+  hosts: all
+  become: yes
+  
+  tasks: 
+    - name: Downlad and add Hashicorp GPG Key
+      ansible.builtin.apt_key:
+        url: https://apt.releases.hashicorp.com/gpg
+        state: present
+        keyring: /usr/share/keyrings/hashicorp-archive-keyring.gpg
+
+    - name: Add Hashicorp Apt Repo
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main"
+        filename: hashicorp
+        state: present
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Install Hashicorp Vault
+      ansible.builtin.apt:
+        name: vault
+        state: present
+        
