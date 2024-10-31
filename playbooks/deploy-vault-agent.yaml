@@ -64,3 +64,16 @@
         group: 'vault'
         mode: '0775'
 
+    - name: Copy Vault Service File
+      ansible.builtin.copy:
+        src: ../templates/vault-agent/vault-agent.service
+        dest: /etc/systemd/system/vault-agent.service
+
+    - name: Create Vault PID File
+      ansible.buiiltin.file:
+        path: /var/lib/vault/vault-agent.pid
+        owner: 'vault'
+        group: 'vault'
+        mode: '0775'
+
+    # TODO Get Role ID and Secret ID for Vault and Start Service
