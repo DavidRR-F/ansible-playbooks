@@ -1,0 +1,43 @@
+pid_file = "/var/lib/vault/vault-agent.pid"
+
+vault {
+address = "https://{{ ansible['vaulthost'] }}"
+  retry {
+    backoff = "1s"
+    max_retries = 5
+  }
+}
+
+auto_auth {
+  method {
+    type = "approle"
+    config = {
+      role_id_file_path = "/etc/vault/role_id"
+      secret_id_file_path = "/etc/vault/secret_id"
+    }
+    sinks {
+      sink {
+        type = "file"
+        config = {
+          path = "/tmp/vault"
+        }
+      }
+    }
+  }
+}
+
+api_proxy {
+  use_auto_auth_token = true
+}
+
+template {
+  source = "/etc/vault/templates/key.tpl"
+  desination = "/etc/ssl/certs/{{ ansible['vaulthost'] }}/privkey.pem"
+  command = "systemctl reload vault"
+}
+
+template {
+  source = "/etc/vault/templates/cert.tpl"
+  desination = "/etc/ssl/certs/{{ ansible['vaulthost'] }}/fullchain.pem"
+  command = "systemctl reload vault"
+}

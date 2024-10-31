@@ -24,3 +24,43 @@
         name: vault
         state: present
         
+    - name: Create Agent Directory
+      ansible.builtin.file:
+        path: /etc/vault
+        state: directory
+        owner: 'vault'
+        group: 'vault'
+        mode: '0755'
+
+    - name: Generate Agent HCL
+      ansible.builtin.template:
+        src: ../templates/vault-agent/vault-agent.hcl.j2
+        dest: /etc/vault/vault-agent.hcl
+        owner: 'vault'
+        group: 'vault'
+        mode: '0775'
+
+    - name: Create Template Directory
+      ansible.builtin.file:
+        path: /etc/vault/templates
+        state: directory
+        owner: 'vault'
+        group: 'vault'
+        mode: '0755'
+
+    - name: Copy Key Tpl File
+      ansible.builtin.copy:
+        src: ../templates/vault-agent/key.tpl
+        dest: /etc/vault/templates/key.tpl
+        owner: 'vault'
+        group: 'vault'
+        mode: '0775'
+
+    - name: Copy Cert Tpl File
+      ansible.builtin.copy:
+        src: ../templates/vault-agent/cert.tpl
+        dest: /etc/vault/templates/cert.tpl
+        owner: 'vault'
+        group: 'vault'
+        mode: '0775'
+
