@@ -1,7 +1,7 @@
 pid_file = "/var/lib/vault/vault-agent.pid"
 
 vault {
-address = "https://{{ ansible['vaulthost'] }}"
+address = "https://vault.{{ ansible['domain'] }}"
   retry {
     backoff = "1s"
     max_retries = 5
@@ -32,12 +32,12 @@ api_proxy {
 
 template {
   source = "/etc/vault/templates/key.tpl"
-  desination = "/etc/ssl/certs/{{ ansible['vaulthost'] }}/privkey.pem"
+  desination = "/etc/ssl/certs/{{ ansible['domain'] }}/privkey.pem"
   command = "systemctl reload vault"
 }
 
 template {
   source = "/etc/vault/templates/cert.tpl"
-  desination = "/etc/ssl/certs/{{ ansible['vaulthost'] }}/fullchain.pem"
+  desination = "/etc/ssl/certs/{{ ansible['domain'] }}/fullchain.pem"
   command = "systemctl reload vault"
 }

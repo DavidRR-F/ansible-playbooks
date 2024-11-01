@@ -1,7 +1,8 @@
 - name: Deploy Hashicorp Vault Agent
   hosts: all
   become: yes
-  
+  vars_files: 
+    - /vars/external_vars.yml
   tasks: 
     - name: Downlad and add Hashicorp GPG Key
       ansible.builtin.apt_key:
@@ -37,6 +38,13 @@
         src: ../templates/vault-agent/vault-agent.hcl.j2
         dest: /etc/vault/vault-agent.hcl
         owner: 'vault'
+        group: 'vault'
+        mode: '0775'
+
+    - name: Create Cert Directory
+      ansible.builtin.file:
+        path: "/etc/ssl/certs/{{ domain }}"
+        owner: 'root'
         group: 'vault'
         mode: '0775'
 
@@ -77,3 +85,33 @@
         mode: '0775'
 
     # TODO Get Role ID and Secret ID for Vault and Start Service
+    - name: Read Role/Secret IDS
+      vars:
+        ansible_hashi_vault_url: "https://vault.{{ domain }}"
+        ansible_hashi_vault_token: "{{ vault_token }}"
+      community.hashi_vault.vault_read:
+        - "{{ agent_role }}/role-id"
+        - "{{ agent_role }}/secret-id"
+      register: id_results   
+
+    - name: Write role_id to file
+      ansible.builtin.copy:
+        dest: /etc/vault/role_id
+        content: "{{ id_results[0] }}"
+        owner: 'vault'
+        group: 'vault'
+        mode: '0775'
+
+    - name: Write temp secret_id to file
+      ansible.builtin.copy:
+        dest: /etc/vault/role_id
+        content: "{{ id_results[1] }}"
+        owner: 'vault'
+        group: 'vault'
+        mode: '0775'
+
+    - name: Start Vault Agent Service
+      ansible.builtin.service:
+        name: vault-agent
+        state: started
+        enabled: yes
