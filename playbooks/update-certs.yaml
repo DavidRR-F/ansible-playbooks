@@ -1,0 +1,35 @@
+- name: Update Certs on Remote Servers
+  hosts: localhost
+  become: yes
+  vars:
+    local_cert_directory: "/etc/letsencrypt/{{ lookup('env', 'CERT_DOMAIN') }}"
+    remote_cert_directory: "/etc/ssl/certs/letsencrypt/{{ lookup('env', 'CERT_DOMAIN') }}"
+  tasks:
+    - name: Get certificate expiration date on localhost
+      command: openssl x509 -enddate -noout -in {{ local_cert_directory }}/fullchain.pem
+      register: cert_output
+
+    - name: Parse certificate expiration date
+      set_fact:
+        cert_expiry: "{{ cert_output.stdout.split('=')[1] }}"
+
+    - name: Check if certificate is expired
+      set_fact:
+        cert_valid: "{{ (cert_expiry | to_datetime('%b %d %H:%M:%S %Y %Z')).timestamp() > ansible_date_time.epoch }}"
+
+    - name: Fail if certificate is expired
+      fail:
+        msg: "The certificate has expired and cannot be copied."
+      when: not cert_valid
+
+    - name: Copy certificate to remote hosts
+      delegate_to: "{{ item }}"
+      copy:
+        src: {{ local_cert_directory }}
+        dest: {{ remote_cert_directory }}
+        owner: root
+        group: root
+        mode: '0644'
+      with_items: "{{ groups['all'] }}"
+
+
